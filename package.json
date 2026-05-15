@@ -1,0 +1,28 @@
+{
+  "name": "paulstretch-extension",
+  "private": true,
+  "version": "1.0.0",
+  "type": "commonjs",
+  "main": "dist/extension.js",
+  "scripts": {
+    "install:all": "npm install && cd src/dialog && npm install",
+    "build:dialog": "cd src/dialog && npm run build",
+    "build:host": "tsc --noEmit && tsx build.mts",
+    "build": "npm run build:dialog && npm run build:host",
+    "build:prod": "npm run build:dialog && tsx build.mts --production",
+    "dev:ui": "cd src/dialog && npm run dev",
+    "start": "npm run build && extensions-cli run",
+    "package": "node package.js",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@ableton-extensions/sdk": "file:./vendor/ableton-extensions-sdk-1.0.0-beta.0.tgz"
+  },
+  "devDependencies": {
+    "@ableton-extensions/cli": "file:./vendor/ableton-extensions-cli-1.0.0-beta.0.tgz",
+    "@types/node": "^25.7.0",
+    "esbuild": "0.28.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.9.3"
+  }
+}

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Paulstretch For Live</title>
+    <script>
+      // Replaced by the host before the dialog is shown. When loaded
+      // standalone (e.g. `npm run dev`), the placeholders remain and the app
+      // falls back to its file-picker / drag-drop flow.
+      window.__INITIAL_DATA__ = {
+        audioBase64: "__AUDIO_BASE64__",
+        sampleRate: __SAMPLE_RATE__,
+        clipName: "__CLIP_NAME__",
+        durationSec: __DURATION_SEC__,
+        uploadUrl: "__UPLOAD_URL__",
+        logUrl: "__LOG_URL__",
+      };
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

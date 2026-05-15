@@ -1,0 +1,17 @@
+node_modules
+dist
+.DS_Store
+src/dialog/node_modules
+src/dialog/dist
+*.tsbuildinfo
+
+# Build artifacts — published to Releases via CI, not committed
+*.ablx
+
+# Vendored Extensions SDK + CLI tarballs (file: deps in package.json).
+# Restored from the SDK download locally, and from CI secrets on the runner.
+# Not committed; their integrity is pinned in package-lock.json.
+/vendor/*.tgz
+
+# Extensions SDK distribution download (source of the vendor/ tarballs).
+extensions-sdk-*.zip

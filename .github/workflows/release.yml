@@ -1,0 +1,88 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      # TODO: remove this whole step once @ableton-extensions/{sdk,cli} are on
+      # npm — then `npm ci` resolves them directly and no secrets are needed.
+      # Also delete scripts/upload-sdk-secrets.sh and the repo's
+      # EXTENSIONS_{SDK,CLI}_TGZ_B64_* secrets.
+      #
+      # The Ableton Extensions SDK is not yet on npm. package.json depends on
+      # both the SDK and the CLI as local file: tarballs under vendor/:
+      #   "@ableton-extensions/sdk": "file:./vendor/ableton-extensions-sdk-<v>.tgz"
+      #   "@ableton-extensions/cli": "file:./vendor/ableton-extensions-cli-<v>.tgz"
+      # Restore those exact tarballs into vendor/ so `npm ci` finds them with no
+      # edits to package.json / package-lock.json. package-lock.json pins each
+      # tarball's integrity, so these bytes MUST match what was used to generate
+      # the lockfile — scripts/upload-sdk-secrets.sh refreshes the secrets and
+      # the lockfile together from the same vendor/ tarballs.
+      #
+      # Each tarball is base64-encoded and split across numbered secrets to stay
+      # under GitHub's 48 KB per-secret cap. Produce/update these secrets with
+      # scripts/upload-sdk-secrets.sh — the chunk counts must match that script.
+      - name: Restore Extensions SDK + CLI
+        env:
+          EXTENSIONS_SDK_TGZ_B64_1: ${{ secrets.EXTENSIONS_SDK_TGZ_B64_1 }}
+          EXTENSIONS_SDK_TGZ_B64_2: ${{ secrets.EXTENSIONS_SDK_TGZ_B64_2 }}
+          EXTENSIONS_SDK_TGZ_B64_3: ${{ secrets.EXTENSIONS_SDK_TGZ_B64_3 }}
+          EXTENSIONS_CLI_TGZ_B64_1: ${{ secrets.EXTENSIONS_CLI_TGZ_B64_1 }}
+        run: |
+          for v in EXTENSIONS_SDK_TGZ_B64_1 EXTENSIONS_SDK_TGZ_B64_2 EXTENSIONS_SDK_TGZ_B64_3 EXTENSIONS_CLI_TGZ_B64_1; do
+            if [ -z "${!v}" ]; then
+              echo "::error::Secret $v is not set. Run scripts/upload-sdk-secrets.sh." >&2
+              exit 1
+            fi
+          done
+
+          # Decode each secret straight into the vendor/ path package.json names
+          # (the file: spec carries the exact filename, including version).
+          # npm reads the .tgz directly — no extraction.
+          restore() { # <dep key in package.json> <base64 string>
+            local dest
+            dest="$(node -e "process.stdout.write(require('./package.json').dependencies['$1'] || require('./package.json').devDependencies['$1'])" | sed 's#^file:\.\{0,1\}/\{0,1\}##')"
+            mkdir -p "$(dirname "$dest")"
+            printf '%s' "$2" | base64 -d > "$dest"
+            echo "Restored $1 -> $dest ($(wc -c <"$dest") bytes)"
+          }
+
+          restore "@ableton-extensions/sdk" "${EXTENSIONS_SDK_TGZ_B64_1}${EXTENSIONS_SDK_TGZ_B64_2}${EXTENSIONS_SDK_TGZ_B64_3}"
+          restore "@ableton-extensions/cli" "${EXTENSIONS_CLI_TGZ_B64_1}"
+
+      - name: Install host deps
+        run: npm ci
+
+      - name: Install dialog deps
+        run: npm ci
+        working-directory: src/dialog
+
+      - name: Build and package .ablx
+        run: npm run package
+
+      - name: Locate .ablx
+        id: ablx
+        run: echo "path=$(ls *.ablx)" >> "$GITHUB_OUTPUT"
+
+      - name: Publish release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ${{ steps.ablx.outputs.path }}
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, 'rc') }}
