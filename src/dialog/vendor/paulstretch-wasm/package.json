@@ -1,0 +1,21 @@
+{
+  "name": "@olilarkin/paulstretch-wasm",
+  "version": "0.1.0",
+  "type": "module",
+  "main": "./paulstretch.js",
+  "types": "./paulstretch.d.ts",
+  "exports": {
+    ".": {
+      "types": "./paulstretch.d.ts",
+      "import": "./paulstretch.js",
+      "default": "./paulstretch.js"
+    },
+    "./paulstretch.wasm": "./paulstretch.wasm"
+  },
+  "files": [
+    "paulstretch.js",
+    "paulstretch.wasm",
+    "paulstretch.d.ts"
+  ],
+  "license": "GPL-2.0"
+}
