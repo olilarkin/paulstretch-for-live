@@ -12,7 +12,7 @@ See also [Paulstretch For Web](https://github.com/olilarkin/paulstretch-for-web)
 
 ## Just want to use it?
 
-Extensions are a new feature in Ableton Live 12.4.5, currently in beta.
+Extensions are a new feature in Ableton Live 12.4.5 (Suite), currently in beta.
 They won't work in previous versions. 
 
 Grab the prebuilt `Paulstretch-<version>.ablx` from this repo's
