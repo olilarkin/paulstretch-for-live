@@ -19,8 +19,6 @@ Grab the prebuilt `Paulstretch-<version>.ablx` from this repo's
 [Releases](../../releases) and install it into Live (Preferences →
 Extensions). You don't need any of the build steps below.
 
-This project is also available as a web app, you can use it via the web [here](https://olilarkin.github.io/paulstretch-for-web).
-
 ## Building from source
 
 This extension depends on the **Ableton Extensions SDK**
