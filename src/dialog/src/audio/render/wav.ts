@@ -11,7 +11,12 @@ function writeAscii(view: DataView, offset: number, s: string): void {
   for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
 }
 
-export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Blob {
+// Validate the channels, allocate the output buffer, and write the 44-byte
+// header. Shared by the sync and async encoders so the two can't drift.
+function prepareWavBuffer(
+  channels: Float32Array[],
+  sampleRate: number,
+): { buf: ArrayBuffer; view: DataView; numChannels: number; numFrames: number } {
   if (channels.length === 0) throw new Error('encodeWavPcm16: no channels');
   const numChannels = channels.length;
   const numFrames = channels[0].length;
@@ -46,8 +51,14 @@ export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Bl
   writeAscii(view, 36, 'data');
   view.setUint32(40, dataSize, true);
 
-  let offset = 44;
-  for (let i = 0; i < numFrames; i++) {
+  return { buf, view, numChannels, numFrames };
+}
+
+// Write interleaved PCM16 for frames [start, end) into `view` (header is 44 bytes).
+function writeSamples(view: DataView, channels: Float32Array[], start: number, end: number): void {
+  const numChannels = channels.length;
+  let offset = 44 + start * numChannels * 2;
+  for (let i = start; i < end; i++) {
     for (let c = 0; c < numChannels; c++) {
       let s = channels[c][i];
       if (s > 1) s = 1;
@@ -58,7 +69,43 @@ export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Bl
       offset += 2;
     }
   }
+}
 
+export function encodeWavPcm16(channels: Float32Array[], sampleRate: number): Blob {
+  const { buf, view, numFrames } = prepareWavBuffer(channels, sampleRate);
+  writeSamples(view, channels, 0, numFrames);
+  return new Blob([buf], { type: 'audio/wav' });
+}
+
+export interface EncodeWavOptions {
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+  /** Frames written per event-loop slice; lower = smoother bar, higher = faster. */
+  framesPerYield?: number;
+}
+
+// Async, cancellable WAV encoder. Encoding a long file is an O(frames) loop that
+// would freeze the UI thread; this writes in slices and yields a macrotask
+// (setTimeout 0 — a microtask wouldn't let the browser paint) between them so a
+// progress bar can repaint and a cancel can land.
+export async function encodeWavPcm16Async(
+  channels: Float32Array[],
+  sampleRate: number,
+  opts: EncodeWavOptions = {},
+): Promise<Blob> {
+  const { onProgress, signal, framesPerYield = 1 << 20 } = opts;
+  const { buf, view, numFrames } = prepareWavBuffer(channels, sampleRate);
+  if (numFrames === 0) {
+    onProgress?.(1);
+    return new Blob([buf], { type: 'audio/wav' });
+  }
+  for (let start = 0; start < numFrames; start += framesPerYield) {
+    if (signal?.aborted) throw new DOMException('Encode cancelled', 'AbortError');
+    const end = Math.min(start + framesPerYield, numFrames);
+    writeSamples(view, channels, start, end);
+    onProgress?.(end / numFrames);
+    if (end < numFrames) await new Promise<void>((r) => setTimeout(r, 0));
+  }
   return new Blob([buf], { type: 'audio/wav' });
 }
 

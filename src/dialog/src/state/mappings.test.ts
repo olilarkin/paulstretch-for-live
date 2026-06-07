@@ -1,11 +1,14 @@
 import { describe, it, expect } from 'vitest';
 import {
   MAX_STREAMING_FFT_SIZE,
+  WARN_DURATION_SEC,
   fftResolution,
+  formatBytes,
   formatDuration,
   formatFftSize,
   formatStretchFactor,
   optimizeClassicFftSize,
+  shouldWarn,
   sliderToStreamingFftSize,
   sliderToFftSize,
   sliderToStretch,
@@ -94,5 +97,37 @@ describe('fftResolution', () => {
     const r = fftResolution(44100, 44100);
     expect(r.seconds).toBeCloseTo(1.0);
     expect(r.hz).toBeCloseTo(1.0);
+  });
+});
+
+describe('formatBytes', () => {
+  it('formats bytes under 1 KiB with no decimals', () => {
+    expect(formatBytes(0)).toBe('0 B');
+    expect(formatBytes(1023)).toBe('1023 B');
+  });
+  it('scales to KiB/MiB/GiB with one decimal', () => {
+    expect(formatBytes(1024)).toBe('1.0 KiB');
+    expect(formatBytes(1024 * 1024)).toBe('1.0 MiB');
+    expect(formatBytes(4 * 1024 * 1024 * 1024)).toBe('4.0 GiB');
+  });
+  it('caps at GiB for very large values', () => {
+    expect(formatBytes(5 * 1024 * 1024 * 1024 * 1024)).toBe('5120.0 GiB');
+  });
+  it('returns -- for invalid input', () => {
+    expect(formatBytes(NaN)).toBe('--');
+    expect(formatBytes(-1)).toBe('--');
+  });
+});
+
+describe('shouldWarn', () => {
+  it('uses a 10-minute threshold', () => {
+    expect(WARN_DURATION_SEC).toBe(600);
+    expect(shouldWarn(599)).toBe(false);
+    expect(shouldWarn(600)).toBe(true);
+    expect(shouldWarn(601)).toBe(true);
+  });
+  it('returns false for non-finite input', () => {
+    expect(shouldWarn(NaN)).toBe(false);
+    expect(shouldWarn(Infinity)).toBe(false);
   });
 });

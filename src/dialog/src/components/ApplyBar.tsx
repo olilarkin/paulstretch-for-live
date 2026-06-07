@@ -2,24 +2,30 @@ import { useCallback, useRef, useState } from 'react';
 import { useStore } from '../state/store';
 import {
   fftResolution,
+  formatBytes,
   formatDuration,
   formatFftSize,
   formatStretchFactor,
+  shouldWarn,
   sliderToStreamingFftSize,
   sliderToStretch,
 } from '../state/mappings';
 import { densifyLogValuesWithBreakpoints } from './EnvelopeEditor/interpolation';
 import type { RenderJob } from '../audio/render/types';
 import { runRender } from '../audio/render/runRender';
-import { encodeWavPcm16, estimateWavPcm16Size, WAV_MAX_BYTES } from '../audio/render/wav';
+import { encodeWavPcm16Async, estimateWavPcm16Size, WAV_MAX_BYTES } from '../audio/render/wav';
 import { getUploadUrl } from '../audio/loadInjected';
 import { cancel, closeWithResult } from '../ipc';
+import { ConfirmDialog } from './ConfirmDialog';
+import { ProgressDialog } from './ProgressDialog';
 
 type Status =
   | { kind: 'idle' }
-  | { kind: 'rendering' }
-  | { kind: 'encoding' }
+  | { kind: 'confirm' }
+  | { kind: 'rendering'; fraction: number }
+  | { kind: 'encoding'; fraction: number }
   | { kind: 'uploading' }
+  | { kind: 'cancelling' }
   | { kind: 'error'; message: string };
 
 export function ApplyBar() {
@@ -31,6 +37,7 @@ export function ApplyBar() {
 
   const [status, setStatus] = useState<Status>({ kind: 'idle' });
   const jobIdRef = useRef(0);
+  const abortRef = useRef<AbortController | null>(null);
 
   const sr = source?.sampleRate ?? 44100;
   const dur = source?.durationSec ?? 0;
@@ -84,35 +91,33 @@ export function ApplyBar() {
     };
   }, [source, params, processParams, binauralParams, envelope, stretch, fftSize, jobIdRef]);
 
-  const onApply = useCallback(async () => {
-    if (!source) return;
-    if (tooLarge) {
-      setStatus({
-        kind: 'error',
-        message: `Output exceeds the 4 GiB WAV limit. Lower the stretch factor.`,
-      });
-      return;
-    }
+  // The render → encode → upload pipeline. Called directly for short outputs, or
+  // from the warning dialog's confirm for long ones. Cancellable at every phase
+  // via the shared AbortController.
+  const startRender = useCallback(async () => {
     const uploadUrl = getUploadUrl();
-    if (!uploadUrl) {
-      setStatus({
-        kind: 'error',
-        message: 'No upload endpoint available — run inside Ableton Live.',
-      });
-      return;
-    }
     const job = buildJob();
-    if (!job) return;
-    setStatus({ kind: 'rendering' });
+    if (!job || !uploadUrl) return;
+
+    const ac = new AbortController();
+    abortRef.current = ac;
+    setStatus({ kind: 'rendering', fraction: 0 });
     try {
-      const rendered = await runRender(job);
-      setStatus({ kind: 'encoding' });
-      const blob = encodeWavPcm16(rendered.channels, rendered.sampleRate);
+      const rendered = await runRender(job, {
+        signal: ac.signal,
+        onProgress: (f) => setStatus({ kind: 'rendering', fraction: f }),
+      });
+      setStatus({ kind: 'encoding', fraction: 0 });
+      const blob = await encodeWavPcm16Async(rendered.channels, rendered.sampleRate, {
+        signal: ac.signal,
+        onProgress: (f) => setStatus({ kind: 'encoding', fraction: f }),
+      });
       setStatus({ kind: 'uploading' });
       const response = await fetch(uploadUrl, {
         method: 'POST',
         headers: { 'Content-Type': 'audio/wav' },
         body: blob,
+        signal: ac.signal,
       });
       if (!response.ok) {
         const text = await response.text().catch(() => '');
@@ -122,21 +127,58 @@ export function ApplyBar() {
       // After closeWithResult the host tears down the webview; UI state below
       // this line is moot.
     } catch (err) {
+      if (ac.signal.aborted || (err instanceof Error && err.name === 'AbortError')) {
+        setStatus({ kind: 'idle' });
+      } else {
+        setStatus({
+          kind: 'error',
+          message: err instanceof Error ? err.message : String(err),
+        });
+      }
+    } finally {
+      abortRef.current = null;
+    }
+  }, [buildJob]);
+
+  const onApply = useCallback(() => {
+    if (!source) return;
+    if (tooLarge) {
       setStatus({
         kind: 'error',
-        message: err instanceof Error ? err.message : String(err),
+        message: `Output exceeds the 4 GiB WAV limit. Lower the stretch factor.`,
       });
+      return;
     }
-  }, [source, buildJob, tooLarge]);
+    if (!getUploadUrl()) {
+      setStatus({
+        kind: 'error',
+        message: 'No upload endpoint available — run inside Ableton Live.',
+      });
+      return;
+    }
+    if (shouldWarn(outDurationSec)) {
+      setStatus({ kind: 'confirm' });
+      return;
+    }
+    void startRender();
+  }, [source, tooLarge, outDurationSec, startRender]);
 
   const onCancel = useCallback(() => {
     cancel();
   }, []);
 
+  const onCancelRender = useCallback(() => {
+    setStatus({ kind: 'cancelling' });
+    abortRef.current?.abort();
+  }, []);
+
   const busy =
     status.kind === 'rendering' ||
     status.kind === 'encoding' ||
-    status.kind === 'uploading';
+    status.kind === 'uploading' ||
+    status.kind === 'cancelling';
+
+  const progress = progressView(status, outDurationSec);
 
   return (
     <div className="apply-bar">
@@ -144,9 +186,6 @@ export function ApplyBar() {
         <span>Stretch: {formatStretchFactor(stretch)} → {formatDuration(outDurationSec)}</span>
         <span className="apply-sep">·</span>
         <span>Window: {formatFftSize(fftSize)} ({res.seconds.toFixed(3)}s)</span>
-        {status.kind === 'rendering' && <span className="apply-status">Rendering…</span>}
-        {status.kind === 'encoding' && <span className="apply-status">Encoding WAV…</span>}
-        {status.kind === 'uploading' && <span className="apply-status">Saving…</span>}
         {status.kind === 'error' && <span className="apply-status error">Error: {status.message}</span>}
       </div>
       <div className="apply-buttons">
@@ -161,6 +200,57 @@ export function ApplyBar() {
           {busy ? 'Working…' : 'Apply'}
         </button>
       </div>
+
+      {status.kind === 'confirm' && (
+        <ConfirmDialog
+          title="Long render"
+          body={
+            <p>
+              This will produce {envelope.enabled ? 'about ' : ''}
+              <strong>{formatDuration(outDurationSec)}</strong> of audio
+              {' '}(~{formatBytes(outBytes)}) and may take a while. Render anyway?
+            </p>
+          }
+          confirmLabel="Render anyway"
+          cancelLabel="Cancel"
+          onConfirm={() => void startRender()}
+          onCancel={() => setStatus({ kind: 'idle' })}
+        />
+      )}
+
+      {progress && (
+        <ProgressDialog
+          title={progress.title}
+          phaseLabel={progress.label}
+          fraction={progress.fraction}
+          canCancel={status.kind !== 'cancelling'}
+          onCancel={onCancelRender}
+        />
+      )}
     </div>
   );
+}
+
+// Maps the busy states to the progress overlay's title/label/fraction; returns
+// null when no overlay should show.
+function progressView(
+  status: Status,
+  outDurationSec: number,
+): { title: string; label: string; fraction: number | null } | null {
+  switch (status.kind) {
+    case 'rendering':
+      return {
+        title: 'Rendering audio',
+        label: `Rendering · ${formatDuration(outDurationSec)}`,
+        fraction: status.fraction,
+      };
+    case 'encoding':
+      return { title: 'Encoding WAV', label: 'Encoding', fraction: status.fraction };
+    case 'uploading':
+      return { title: 'Saving', label: 'Saving to Live', fraction: null };
+    case 'cancelling':
+      return { title: 'Cancelling', label: 'Cancelling…', fraction: null };
+    default:
+      return null;
+  }
 }

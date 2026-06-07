@@ -125,6 +125,9 @@ function startDialogServer(
         const cleanup = (err: Error) => {
           ws.destroy();
           void safeUnlink(sink.outPath);
+          // Let the dialog retry: a cancelled/failed upload (e.g. the user hit
+          // Cancel mid-render) must not lock out the next Apply with a 409.
+          resultConsumed = false;
           if (!res.headersSent) {
             res.writeHead(500);
             res.end(String(err.message ?? err));

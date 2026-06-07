@@ -42,12 +42,70 @@ function post(msg: RenderWorkerToMain, transfer?: Transferable[]): void {
   (self as DedicatedWorkerGlobalScope).postMessage(msg, transfer ?? []);
 }
 
+// Posts a `progress` message, throttled to integer-percent changes. A long
+// render fires `onChunk` thousands of times; this caps it at ~101 messages.
+function makeProgressEmitter(jobId: number): (fraction: number) => void {
+  let lastPct = -1;
+  return (fraction) => {
+    const f = fraction < 0 ? 0 : fraction > 1 ? 1 : fraction;
+    const pct = Math.floor(f * 100);
+    if (pct !== lastPct) {
+      lastPct = pct;
+      post({ type: 'progress', jobId, fraction: f });
+    }
+  };
+}
+
+// Render into a single JS-heap buffer one chunk at a time. The whole-buffer
+// renderMono/renderStereo hold the entire output in WASM linear memory twice
+// over (the C++ buffer plus the returned copy), so a large stretch factor can
+// blow past the 4 GiB wasm32 cap and abort — see paulstretch-for-live#2. The
+// chunked API keeps peak WASM memory at ~input + one chunk regardless of output
+// length; we accumulate the chunks here on the (much larger) JS heap.
+// estimateOutputFrames is an upper bound, so we pre-size to it and trim to the
+// frames actually written.
+function renderMonoToHeap(
+  renderer: OfflineRenderer,
+  input: Float32Array,
+  onProgress: (fraction: number) => void,
+): Float32Array {
+  const cap = renderer.estimateOutputFrames(input.length);
+  const out = new Float32Array(cap);
+  let off = 0;
+  renderer.renderMonoChunked(input, (chunk) => {
+    out.set(chunk, off);
+    off += chunk.length;
+    if (cap > 0) onProgress(off / cap);
+  });
+  return out.subarray(0, off);
+}
+
+function renderStereoToHeap(
+  renderer: OfflineRenderer,
+  left: Float32Array,
+  right: Float32Array,
+  onProgress: (fraction: number) => void,
+): { left: Float32Array; right: Float32Array } {
+  const cap = renderer.estimateOutputFrames(left.length);
+  const outL = new Float32Array(cap);
+  const outR = new Float32Array(cap);
+  let off = 0;
+  renderer.renderStereoChunked(left, right, (l, r) => {
+    outL.set(l, off);
+    outR.set(r, off);
+    off += l.length;
+    if (cap > 0) onProgress(off / cap);
+  });
+  return { left: outL.subarray(0, off), right: outR.subarray(0, off) };
+}
+
 function processBinaural(
   M: PSModule,
   sampleRate: number,
   left: Float32Array,
   right: Float32Array,
   cfg: RenderJob['binaural'],
+  onProgress: (fraction: number) => void,
 ): { left: Float32Array; right: Float32Array } {
   const bp: BinauralBeatsProcessor = new M.BinauralBeatsProcessor(sampleRate);
   bp.setOptions({
@@ -72,6 +130,7 @@ function processBinaural(
     const r = bp.process(left.subarray(off, end), right.subarray(off, end), positionPct);
     outL.set(r.left, off);
     outR.set(r.right, off);
+    if (total > 0) onProgress(end / total);
   }
   bp.delete();
   return { left: outL, right: outR };
@@ -80,6 +139,14 @@ function processBinaural(
 async function handleRender(job: RenderJob): Promise<void> {
   const M = await getModule();
   const win = mapWindow(M, job.windowType) as never;
+
+  // When binaural is enabled the render is followed by a second O(n) pass, so
+  // split the progress bar: render fills 0–0.5, the binaural pass 0.5–1.0. With
+  // no binaural, render owns the full 0–1.
+  const emit = makeProgressEmitter(job.jobId);
+  const renderScale = job.binaural.enabled ? 0.5 : 1.0;
+  const renderProgress = (f: number) => emit(f * renderScale);
+  const binauralProgress = (f: number) => emit(0.5 + f * 0.5);
 
   let renderer: OfflineRenderer | null = null;
   try {
@@ -106,11 +173,11 @@ async function handleRender(job: RenderJob): Promise<void> {
     let left: Float32Array;
     let right: Float32Array | null;
     if (job.channels.length >= 2) {
-      const out = renderer.renderStereo(job.channels[0], job.channels[1]);
+      const out = renderStereoToHeap(renderer, job.channels[0], job.channels[1], renderProgress);
       left = out.left;
       right = out.right;
     } else {
-      left = renderer.renderMono(job.channels[0]);
+      left = renderMonoToHeap(renderer, job.channels[0], renderProgress);
       right = null;
     }
     renderer.delete();
@@ -119,7 +186,7 @@ async function handleRender(job: RenderJob): Promise<void> {
     let finalChannels: Float32Array[];
     if (job.binaural.enabled) {
       const r = right ?? new Float32Array(left);
-      const stereo = processBinaural(M, job.sampleRate, left, r, job.binaural);
+      const stereo = processBinaural(M, job.sampleRate, left, r, job.binaural, binauralProgress);
       finalChannels = [stereo.left, stereo.right];
     } else {
       finalChannels = right ? [left, right] : [left];

@@ -1,21 +1,49 @@
 {
   "name": "@olilarkin/paulstretch-wasm",
-  "version": "0.1.0",
+  "version": "0.2.1",
+  "description": "Paulstretch extreme time-stretching algorithm, compiled to WebAssembly via Emscripten",
   "type": "module",
-  "main": "./paulstretch.js",
-  "types": "./paulstretch.d.ts",
+  "main": "dist/paulstretch.js",
+  "module": "dist/paulstretch.js",
+  "types": "index.d.ts",
   "exports": {
     ".": {
-      "types": "./paulstretch.d.ts",
-      "import": "./paulstretch.js",
-      "default": "./paulstretch.js"
+      "types": "./index.d.ts",
+      "import": "./dist/paulstretch.js",
+      "default": "./dist/paulstretch.js"
     },
-    "./paulstretch.wasm": "./paulstretch.wasm"
+    "./paulstretch.wasm": "./dist/paulstretch.wasm"
   },
   "files": [
-    "paulstretch.js",
-    "paulstretch.wasm",
-    "paulstretch.d.ts"
+    "dist/paulstretch.js",
+    "dist/paulstretch.wasm",
+    "index.d.ts",
+    "README.md"
   ],
-  "license": "GPL-2.0"
+  "keywords": [
+    "audio",
+    "time-stretch",
+    "paulstretch",
+    "wasm",
+    "webassembly",
+    "dsp"
+  ],
+  "author": "Oli Larkin",
+  "license": "GPL-2.0",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/olilarkin/libpaulstretch.git",
+    "directory": "npm"
+  },
+  "homepage": "https://github.com/olilarkin/libpaulstretch#readme",
+  "bugs": {
+    "url": "https://github.com/olilarkin/libpaulstretch/issues"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com",
+    "access": "restricted"
+  }
 }

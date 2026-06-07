@@ -75,3 +75,23 @@ export function fftResolution(fftSize: number, sampleRate: number): { seconds: n
     hz: sampleRate / fftSize,
   };
 }
+
+export function formatBytes(bytes: number): string {
+  if (!isFinite(bytes) || bytes < 0) return '--';
+  const units = ['B', 'KiB', 'MiB', 'GiB'];
+  let v = bytes;
+  let i = 0;
+  while (v >= 1024 && i < units.length - 1) {
+    v /= 1024;
+    i += 1;
+  }
+  return `${v.toFixed(i === 0 ? 0 : 1)} ${units[i]}`;
+}
+
+// Outputs longer than this get a confirmation prompt before rendering — a short
+// sound stretched far can run to hours, which is rarely intended.
+export const WARN_DURATION_SEC = 600; // 10 minutes
+
+export function shouldWarn(durationSec: number): boolean {
+  return isFinite(durationSec) && durationSec >= WARN_DURATION_SEC;
+}

@@ -67,6 +67,7 @@ export type RenderMainToWorker =
 
 export type RenderWorkerToMain =
   | { type: 'ready' }
+  | { type: 'progress'; jobId: number; fraction: number }
   | {
       type: 'rendered';
       jobId: number;

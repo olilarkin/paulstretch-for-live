@@ -745,6 +745,57 @@ input[type="range"]::-webkit-slider-thumb {
   border: 1px solid var(--border);
   cursor: pointer;
 }
+.modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.modal-actions button { margin-top: 0; }
+.modal-actions .primary {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+/* Progress overlay (Apply render) */
+.progress-modal { min-width: 320px; }
+.progress-bar {
+  display: block;
+  width: 100%;
+  height: 10px;
+  margin: 12px 0 6px;
+  -webkit-appearance: none;
+  appearance: none;
+  border: 1px solid var(--border-dark);
+  background: var(--bg);
+}
+.progress-bar::-webkit-progress-bar { background: var(--bg); }
+.progress-bar::-webkit-progress-value { background: var(--accent); }
+.progress-bar.indeterminate {
+  position: relative;
+  overflow: hidden;
+  padding: 0;
+}
+.progress-bar.indeterminate::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: 40%;
+  background: var(--accent);
+  animation: progress-indeterminate 1.1s linear infinite;
+}
+@keyframes progress-indeterminate {
+  0% { transform: translateX(-100%); }
+  100% { transform: translateX(250%); }
+}
+.progress-meta {
+  display: flex;
+  justify-content: space-between;
+  font-size: 11px;
+  margin-bottom: 4px;
+}
 
 /* ---------------------------------------------------------------------------
  * Extension-only styles (Ableton Live host mode)

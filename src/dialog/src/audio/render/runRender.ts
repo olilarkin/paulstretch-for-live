@@ -22,22 +22,51 @@ export interface RenderResult {
   sampleRate: number;
 }
 
-export async function runRender(job: RenderJob): Promise<RenderResult> {
+export interface RunRenderOptions {
+  onProgress?: (fraction: number) => void;
+  signal?: AbortSignal;
+}
+
+export async function runRender(
+  job: RenderJob,
+  opts: RunRenderOptions = {},
+): Promise<RenderResult> {
+  const { onProgress, signal } = opts;
   const worker = getWorker();
   const transfer = job.channels.map((c) => c.buffer);
 
   return new Promise<RenderResult>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(new DOMException('Render cancelled', 'AbortError'));
+      return;
+    }
+
+    const cleanup = () => {
+      worker.removeEventListener('message', onMessage);
+      signal?.removeEventListener('abort', onAbort);
+    };
+    // The render is a blocking synchronous WASM call, so the worker can't read a
+    // cancel message mid-render — terminating it is the only reliable stop. The
+    // singleton is reset so the next render spawns (and re-warms) a fresh worker.
+    const onAbort = () => {
+      cleanup();
+      disposeRenderWorker();
+      reject(new DOMException('Render cancelled', 'AbortError'));
+    };
     const onMessage = (e: MessageEvent<RenderWorkerToMain>) => {
       const m = e.data;
-      if (m.type === 'rendered' && m.jobId === job.jobId) {
-        worker.removeEventListener('message', onMessage);
+      if (m.type === 'progress' && m.jobId === job.jobId) {
+        onProgress?.(m.fraction);
+      } else if (m.type === 'rendered' && m.jobId === job.jobId) {
+        cleanup();
         resolve({ channels: m.channels, sampleRate: m.sampleRate });
       } else if (m.type === 'error') {
-        worker.removeEventListener('message', onMessage);
+        cleanup();
         reject(new Error(m.message));
       }
     };
     worker.addEventListener('message', onMessage);
+    signal?.addEventListener('abort', onAbort);
     const msg: RenderMainToWorker = { type: 'render', ...job };
     worker.postMessage(msg, transfer);
   });
