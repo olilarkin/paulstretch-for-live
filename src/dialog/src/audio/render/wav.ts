@@ -7,6 +7,31 @@ export function estimateWavPcm16Size(numFrames: number, numChannels: number): nu
 
 export const WAV_MAX_BYTES = 0xffffffff; // RIFF/WAVE chunk-size field is uint32.
 
+// The render must hold two single, contiguous allocations: each channel's
+// accumulation Float32Array (numFrames * 4 bytes) and the interleaved WAV
+// ArrayBuffer (numFrames * numChannels * 2 + 44). A single typed array / buffer
+// is capped near 2 GiB in Live's WebKit webview, so a render whose largest
+// buffer would exceed this can't complete regardless of the 4 GiB WAV limit —
+// it's preview-only. Conservative so it holds across host platforms.
+export const MAX_RENDER_ALLOC_BYTES = 2 * 1024 * 1024 * 1024 - 64 * 1024 * 1024; // ~1.94 GiB
+
+// Largest single contiguous allocation a render of this size needs.
+export function maxRenderAllocBytes(numFrames: number, numChannels: number): number {
+  const accumBytes = numFrames * 4; // per-channel Float32Array
+  return Math.max(accumBytes, estimateWavPcm16Size(numFrames, numChannels));
+}
+
+// Whether an output of this size can actually be rendered to a WAV file (vs.
+// preview-only): it must fit the WAV format's 4 GiB cap AND stay under the
+// single-allocation ceiling above.
+export function isRenderable(numFrames: number, numChannels: number): boolean {
+  if (!isFinite(numFrames) || numFrames < 0) return false;
+  return (
+    estimateWavPcm16Size(numFrames, numChannels) <= WAV_MAX_BYTES &&
+    maxRenderAllocBytes(numFrames, numChannels) <= MAX_RENDER_ALLOC_BYTES
+  );
+}
+
 function writeAscii(view: DataView, offset: number, s: string): void {
   for (let i = 0; i < s.length; i++) view.setUint8(offset + i, s.charCodeAt(i));
 }

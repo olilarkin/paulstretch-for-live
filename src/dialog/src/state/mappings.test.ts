@@ -81,6 +81,24 @@ describe('formatDuration', () => {
   it('handles zero', () => {
     expect(formatDuration(0)).toBe('00:00:00');
   });
+  it('keeps HH:MM:SS just under a day', () => {
+    expect(formatDuration(86399)).toBe('23:59:59');
+  });
+  it('switches to days at and beyond 24h', () => {
+    expect(formatDuration(86400)).toBe('1.0 days');
+    expect(formatDuration(86400 * 3.5)).toBe('3.5 days');
+  });
+  it('switches to years for very long spans', () => {
+    expect(formatDuration(31557600)).toBe('1.0 years');
+    expect(formatDuration(31557600 * 50)).toBe('50.0 years');
+  });
+  it('uses exponential notation for astronomical spans', () => {
+    expect(formatDuration(31557600 * 1e11)).toBe('1.0e+11 years');
+  });
+  it('still guards invalid input', () => {
+    expect(formatDuration(-1)).toBe('--:--:--');
+    expect(formatDuration(NaN)).toBe('--:--:--');
+  });
 });
 
 describe('formatFftSize', () => {

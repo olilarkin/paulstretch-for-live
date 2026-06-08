@@ -1,5 +1,11 @@
 import { describe, it, expect } from 'vitest';
-import { encodeWavPcm16, encodeWavPcm16Async, estimateWavPcm16Size } from './wav';
+import {
+  encodeWavPcm16,
+  encodeWavPcm16Async,
+  estimateWavPcm16Size,
+  isRenderable,
+  MAX_RENDER_ALLOC_BYTES,
+} from './wav';
 
 async function bytes(blob: Blob): Promise<Uint8Array> {
   return new Uint8Array(await blob.arrayBuffer());
@@ -54,6 +60,22 @@ describe('encodeWavPcm16Async progress', () => {
     });
     expect((await bytes(blob)).length).toBe(44);
     expect(fractions).toEqual([1]);
+  });
+});
+
+describe('isRenderable', () => {
+  it('accepts ordinary outputs', () => {
+    expect(isRenderable(44100 * 60, 2)).toBe(true); // 1 min stereo
+  });
+  it('rejects outputs whose per-channel buffer exceeds the alloc ceiling', () => {
+    // The per-channel Float32Array is the binding limit: frames * 4 bytes.
+    const justUnder = Math.floor(MAX_RENDER_ALLOC_BYTES / 4);
+    expect(isRenderable(justUnder, 1)).toBe(true);
+    expect(isRenderable(justUnder + 1, 1)).toBe(false);
+  });
+  it('rejects invalid frame counts', () => {
+    expect(isRenderable(-1, 2)).toBe(false);
+    expect(isRenderable(Infinity, 2)).toBe(false);
   });
 });
 

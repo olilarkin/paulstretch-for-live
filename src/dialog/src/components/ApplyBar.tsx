@@ -13,7 +13,7 @@ import {
 import { densifyLogValuesWithBreakpoints } from './EnvelopeEditor/interpolation';
 import type { RenderJob } from '../audio/render/types';
 import { runRender } from '../audio/render/runRender';
-import { encodeWavPcm16Async, estimateWavPcm16Size, WAV_MAX_BYTES } from '../audio/render/wav';
+import { encodeWavPcm16Async, estimateWavPcm16Size, isRenderable } from '../audio/render/wav';
 import { getUploadUrl } from '../audio/loadInjected';
 import { cancel, closeWithResult } from '../ipc';
 import { ConfirmDialog } from './ConfirmDialog';
@@ -48,7 +48,17 @@ export function ApplyBar() {
   const outFrames = Math.round(dur * stretch * sr);
   const outBytes = numChannels > 0 ? estimateWavPcm16Size(outFrames, numChannels) : 0;
   const outDurationSec = dur * stretch;
-  const tooLarge = outBytes > WAV_MAX_BYTES;
+  // Rendering is preview-only when the output can't actually be written to a
+  // file: HyperStretch is always preview-only (its spans reach 10^18×), and any
+  // mode — normal Stretch included — exceeds the limit once the output grows past
+  // what a single contiguous buffer can hold (~2 GiB) in the WebKit webview.
+  // Without this gate, Apply in that band starts a render that dies silently.
+  const exceedsRenderLimit = numChannels > 0 && !isRenderable(outFrames, numChannels);
+  const previewOnly = params.mode === 'HyperStretch' || exceedsRenderLimit;
+  const previewReason =
+    params.mode === 'HyperStretch'
+      ? 'HyperStretch is preview-only'
+      : 'output is too long to render to a file';
 
   const buildJob = useCallback((): RenderJob | null => {
     if (!source) return null;
@@ -141,14 +151,7 @@ export function ApplyBar() {
   }, [buildJob]);
 
   const onApply = useCallback(() => {
-    if (!source) return;
-    if (tooLarge) {
-      setStatus({
-        kind: 'error',
-        message: `Output exceeds the 4 GiB WAV limit. Lower the stretch factor.`,
-      });
-      return;
-    }
+    if (!source || previewOnly) return;
     if (!getUploadUrl()) {
       setStatus({
         kind: 'error',
@@ -161,7 +164,7 @@ export function ApplyBar() {
       return;
     }
     void startRender();
-  }, [source, tooLarge, outDurationSec, startRender]);
+  }, [source, previewOnly, outDurationSec, startRender]);
 
   const onCancel = useCallback(() => {
     cancel();
@@ -186,6 +189,9 @@ export function ApplyBar() {
         <span>Stretch: {formatStretchFactor(stretch)} → {formatDuration(outDurationSec)}</span>
         <span className="apply-sep">·</span>
         <span>Window: {formatFftSize(fftSize)} ({res.seconds.toFixed(3)}s)</span>
+        {previewOnly && (
+          <span className="apply-status">Preview only — {previewReason}</span>
+        )}
         {status.kind === 'error' && <span className="apply-status error">Error: {status.message}</span>}
       </div>
       <div className="apply-buttons">
@@ -193,9 +199,14 @@ export function ApplyBar() {
           Cancel
         </button>
         <button
-          className="menu-button primary"
+          className={`menu-button primary${previewOnly ? ' preview-only' : ''}`}
           onClick={onApply}
-          disabled={!source || busy || tooLarge}
+          disabled={!source || busy || previewOnly}
+          title={
+            previewOnly
+              ? `${previewReason} — reduce the stretch factor to render to a file`
+              : undefined
+          }
         >
           {busy ? 'Working…' : 'Apply'}
         </button>

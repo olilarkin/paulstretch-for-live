@@ -54,8 +54,22 @@ export function formatStretchFactor(stretch: number): string {
   return stretch.toFixed(3) + 'x';
 }
 
+const SECONDS_PER_DAY = 86400;
+const SECONDS_PER_YEAR = 31557600; // 365.25 days
+
+// HH:MM:SS for anything up to a day; beyond that, extreme stretches run to days
+// or (with HyperStretch) astronomical spans, so switch to a human-readable
+// days / years readout rather than an unreadable five-digit hour count.
 export function formatDuration(seconds: number): string {
   if (!isFinite(seconds) || seconds < 0) return '--:--:--';
+  if (seconds >= SECONDS_PER_YEAR) {
+    const years = seconds / SECONDS_PER_YEAR;
+    const n = years >= 1000 ? years.toExponential(1) : years.toFixed(1);
+    return `${n} years`;
+  }
+  if (seconds >= SECONDS_PER_DAY) {
+    return `${(seconds / SECONDS_PER_DAY).toFixed(1)} days`;
+  }
   const total = Math.floor(seconds);
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);

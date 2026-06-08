@@ -1,6 +1,6 @@
 import { useEffect, useState, type RefObject } from 'react';
 import { useStore } from '../state/store';
-import { sliderToStretch } from '../state/mappings';
+import { formatDuration, sliderToStretch } from '../state/mappings';
 import type { StreamingEngine } from '../audio/streaming/engine';
 
 interface Props {
@@ -105,9 +105,19 @@ export function TransportBar({ engineRef }: Props) {
   );
 }
 
+// Clock readout that rolls minutes into hours and days instead of letting the
+// minute field run unbounded (a 1.5-day stretch would otherwise read "2195:18").
+// Years are delegated to formatDuration, where a day-clock would be unwieldy.
 function fmt(s: number): string {
   if (!isFinite(s) || s < 0) return '--:--';
-  const m = Math.floor(s / 60);
-  const sec = Math.floor(s % 60);
-  return `${m}:${sec.toString().padStart(2, '0')}`;
+  if (s >= 31557600) return formatDuration(s); // ≥ 1 year → "X.X years"
+  const total = Math.floor(s);
+  const days = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const pad = (n: number) => n.toString().padStart(2, '0');
+  if (days > 0) return `${days}d ${pad(h)}:${pad(m)}:${pad(sec)}`;
+  if (h > 0) return `${h}:${pad(m)}:${pad(sec)}`;
+  return `${m}:${pad(sec)}`;
 }
