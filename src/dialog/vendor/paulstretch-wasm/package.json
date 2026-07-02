@@ -1,6 +1,6 @@
 {
   "name": "@olilarkin/paulstretch-wasm",
-  "version": "0.2.1",
+  "version": "0.3.0",
   "description": "Paulstretch extreme time-stretching algorithm, compiled to WebAssembly via Emscripten",
   "type": "module",
   "main": "dist/paulstretch.js",
@@ -12,11 +12,13 @@
       "import": "./dist/paulstretch.js",
       "default": "./dist/paulstretch.js"
     },
-    "./paulstretch.wasm": "./dist/paulstretch.wasm"
+    "./paulstretch.wasm": "./dist/paulstretch.wasm",
+    "./paulstretch.nosimd.wasm": "./dist/paulstretch.nosimd.wasm"
   },
   "files": [
     "dist/paulstretch.js",
     "dist/paulstretch.wasm",
+    "dist/paulstretch.nosimd.wasm",
     "index.d.ts",
     "README.md"
   ],

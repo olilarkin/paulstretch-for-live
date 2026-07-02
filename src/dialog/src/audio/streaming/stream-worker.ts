@@ -4,7 +4,8 @@ import PaulstretchModule, {
   type PaulstretchModule as PSModule,
   type StreamingStretcher,
 } from '@olilarkin/paulstretch-wasm';
-import wasmUrl from '@olilarkin/paulstretch-wasm/paulstretch.wasm?url';
+import { wasmUrl } from '../wasmSupport';
+import { describeWasmError } from '../wasmError';
 import type {
   BinauralConfig,
   MainToWorker,
@@ -323,6 +324,7 @@ function pumpLoop() {
       err instanceof Error ? `${err.message}\n${err.stack}` : String(err),
     );
     state.running = false;
+    post({ type: 'error', message: describeWasmError(err) });
   }
 }
 
@@ -542,7 +544,7 @@ async function handleMain(msg: MainToWorker) {
   } catch (err) {
     post({
       type: 'error',
-      message: err instanceof Error ? err.message : String(err),
+      message: describeWasmError(err),
     });
   }
 }
