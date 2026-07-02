@@ -73,10 +73,10 @@ const defaultEnvelope: Envelope = {
 };
 
 const defaultParams: Params = {
-  // The original FLTK app defaults to 0.5 (≈55×). Now that the engine is
-  // block-streaming there's no buffer-size constraint, so we keep the
-  // original default — paulstretch's whole point is heavy stretching.
-  stretchSlider: 0.5,
+  // The original FLTK app defaults to 0.5 (≈55×), but that's a jarring first
+  // result. Default to a gentler 10×: x = (log10(10)/4)^(1/1.2) ≈ 0.315 in the
+  // Stretch-mode mapping (see sliderToStretch). Users can still push far higher.
+  stretchSlider: 0.315,
   mode: 'Stretch',
   windowSlider: 0.47,
   windowType: 'Hann',
